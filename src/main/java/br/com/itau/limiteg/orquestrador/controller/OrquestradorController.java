@@ -22,12 +22,8 @@ public class OrquestradorController {
     @PostMapping("/contratar")
     public ResponseEntity<OrquestradorResponse> contratar(
         @RequestHeader("Correlation-Id") String correlationId,
-        @RequestHeader("Idempotency-Key") String idempotencyKey,
         @Valid @RequestBody OrquestradorHttpRequest request
     ) {
-        MDC.put("correlation_id", correlationId);
-        MDC.put("idempotency_key", idempotencyKey);
-
         try {
             var execucao = service.contratar(new OrquestradorRequest(
                 request.clienteId(),
