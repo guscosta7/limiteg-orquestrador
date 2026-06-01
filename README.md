@@ -237,20 +237,4 @@ As métricas são exportadas via Micrometer para o Datadog com as tags:
 
 ---
 
-## Decisões técnicas
 
-**Por que DynamoDB e não Redis?**
-O DynamoDB mantém histórico permanente de tentativas e erros — essencial para
-rastreabilidade operacional. Redis seria adequado apenas para dedup de curto prazo.
-
-**Por que idempotency_id composto e não UUID?**
-Reflete a regra de negócio: um ativo só pode garantir uma contratação. A composição
-`client_id-cartao_id-ativo_id` é a chave natural do domínio.
-
-**Por que o orquestrador retoma pelo `ordinal()` do status?**
-A ordem dos status no enum reflete a sequência obrigatória do fluxo. Comparar
-`ordinal()` é simples, explícito e impossível de executar fora de ordem.
-
-**Por que não Step Functions?**
-O fluxo precisa ser síncrono — o cliente espera o "Feito!" na tela.
-Step Functions Express Workflow seria uma alternativa válida para evolução futura.
