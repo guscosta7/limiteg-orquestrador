@@ -1,0 +1,165 @@
+spring:
+  application:
+    name: orquestrador-limite-garantido
+  aop:
+    auto: true
+    proxy-target-class: true
+
+# ── Clientes HTTP ─────────────────────────────────────────────────────────────
+clients:
+  contratacao:
+    url:  http://localhost:9090
+  ativos:
+    url:  http://localhost:9090
+  cartoes:
+    url:  http://localhost:9090
+
+# ── Resilience4j ──────────────────────────────────────────────────────────────
+resilience4j:
+  
+  spring:
+    circuitbreaker:
+      enabled: true
+    retry:
+      enabled: true
+
+  retry:
+    instances:
+      contratacao:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.ConnectException
+          - java.net.SocketException
+          - java.net.SocketTimeoutException
+          - feign.RetryableException
+          - feign.FeignException
+        ignore-exceptions:
+          - br.com.itau.limiteg.orquestrador.exception.ExecucaoDuplicadaException
+      ativos:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.ConnectException
+          - java.net.SocketException
+          - java.net.SocketTimeoutException
+          - feign.RetryableException
+          - feign.FeignException
+      cartoes:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.ConnectException
+          - java.net.SocketException
+          - java.net.SocketTimeoutException
+          - feign.RetryableException
+          - feign.FeignException
+
+  circuit-breaker:
+    instances:
+      contratacao:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 2s
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - feign.FeignException
+          - java.net.ConnectException
+          - java.net.SocketException
+        register-health-indicator: true
+      ativos:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 2s
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - feign.FeignException
+          - java.net.ConnectException
+          - java.net.SocketException
+        register-health-indicator: true
+      cartoes:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 2s
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - feign.FeignException
+          - java.net.ConnectException
+          - java.net.SocketException
+        register-health-indicator: true
+
+  timelimiter:
+    instances:
+      contratacao:
+        timeout-duration: 5s
+      ativos:
+        timeout-duration: 5s
+      cartoes:
+        timeout-duration: 5s
+
+# ── Micrometer + Datadog ──────────────────────────────────────────────────────
+management:
+  metrics:
+    tags:
+      servico: orquestrador-limite-garantido
+      ambiente: ${ENV:local}
+      versao: ${APP_VERSION:local}
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, circuitbreakers
+  health:
+    circuitbreakers:
+      enabled: true
+  datadog:
+    metrics:
+      export:
+        enabled: ${DATADOG_ENABLED:false}
+        api-key: ${DATADOG_API_KEY:local}
+        application-key: ${DATADOG_APP_KEY:local}
+        step: 30s
+        host-tag: host
+
+# ── AWS DynamoDB ──────────────────────────────────────────────────────────────
+aws:
+  region: ${AWS_REGION:us-east-1}
+  dynamodb:
+    table-name: limiteg-orquestrador-execucoes
+
+# ── Reconciliação ────────────────────────────────────────────────────────────
+reconciliacao:
+  timeout-minutos: ${RECONCILIACAO_TIMEOUT_MINUTOS:1}
+  intervalo-ms: ${RECONCILIACAO_INTERVALO_MS:10000}
+  max-tentativas: ${RECONCILIACAO_MAX_TENTATIVAS:5}
+
+# ── Logging estruturado ───────────────────────────────────────────────
+logging:
+  pattern:
+    console: >
+      {"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%p","service":"orquestrador-limite-garantido",
+      "correlation_id":"%X{correlation_id}","contratacao_id":"%X{contratacao_id}",
+      "idempotency_id":"%X{idempotency_id}","message":"%m"}%n
+  level:
+    br.com.itau.limiteg: DEBUG
+    io.github.resilience4j: INFO
+    io.github.resilience4j.retry: DEBUG
+    io.github.resilience4j.circuitbreaker: DEBUG
+    org.springframework.aop: INFO

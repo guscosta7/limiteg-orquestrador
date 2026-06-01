@@ -1,0 +1,18 @@
+{
+  "mappings": [
+    {
+      "name": "POST /contratacao - sucesso",
+      "request": {
+        "method": "POST",
+        "url": "/contratacao"
+      },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "contratacao_id": "ctrato-mock-uuid-001"
+        }
+      }
+    }
+  ]
+}

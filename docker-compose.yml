@@ -1,0 +1,90 @@
+services:
+
+  # ── DynamoDB Local ────────────────────────────────────────────────────────────
+  dynamodb-local:
+    image: amazon/dynamodb-local:2.3.0
+    container_name: limiteg-dynamodb-local
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8000; exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - limiteg-net
+
+  # ── Init — cria tabela DynamoDB ──────────────────────────────────────────────
+  dynamodb-init:
+    image: amazon/aws-cli:2.15.30
+    container_name: limiteg-dynamodb-init
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo ">>> Criando tabela DynamoDB..."
+        # escreve o JSON do GSI em arquivo temporário para evitar problemas de escape/aspas
+        cat > /tmp/gsi.json <<'GSI'
+        [{"IndexName":"contratacao_id-index","KeySchema":[{"AttributeName":"contratacao_id","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"},"ProvisionedThroughput":{"ReadCapacityUnits":5,"WriteCapacityUnits":5}}]
+        GSI
+
+        aws --endpoint-url=http://dynamodb-local:8000 dynamodb create-table \
+          --table-name limiteg-orquestrador-execucoes \
+          --attribute-definitions \
+            AttributeName=idempotency_id,AttributeType=S \
+            AttributeName=contratacao_id,AttributeType=S \
+          --key-schema AttributeName=idempotency_id,KeyType=HASH \
+          --global-secondary-indexes file:///tmp/gsi.json \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+        && echo ">>> Tabela criada." || echo ">>> Tabela ja existe."
+    networks:
+      - limiteg-net
+
+  # ── DynamoDB Admin UI ───────────────────────────────────────────────────────
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:4.3.1
+    container_name: limiteg-dynamodb-admin
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports:
+      - "8001:8001"
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    networks:
+      - limiteg-net
+
+  # ── WireMock — mock das APIs externas ──────────────────────────────────────
+  wiremock:
+    image: wiremock/wiremock:3.4.2
+    container_name: limiteg-wiremock
+    command: ["--port", "9090", "--verbose"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/wiremock/mappings:/home/wiremock/mappings
+      - ./infra/wiremock/__files:/home/wiremock/__files
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/__admin/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - limiteg-net
+
+# ── Network ──────────────────────────────────────────────────────────────────
+networks:
+  limiteg-net:
+    driver: bridge

@@ -1,0 +1,25 @@
+clients:
+  contratacao:
+    url: http://localhost:9090
+  ativos:
+    url: http://localhost:3000
+  cartoes:
+    url: http://localhost:9090
+
+spring:
+  cloud:
+    aws:
+      dynamodb:
+        endpoint: http://localhost:8000
+      credentials:
+        access-key: test
+        secret-key: test
+      region:
+        static: us-east-1
+
+logging:
+  level:
+    br.com.itau.limiteg: DEBUG
+    io.github.resilience4j: DEBUG
+    org.springframework.aop: DEBUG
+    org.springframework.cloud.openfeign: DEBUG

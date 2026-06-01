@@ -1,0 +1,117 @@
+{
+  "uuid": "70b965b2-1595-4d58-9cef-893ed0f8bf45",
+  "lastMigration": 33,
+  "name": "Teste",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 3000,
+  "hostname": "",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "70bb77c1-1bff-4b2e-84d0-a82f543f170c",
+      "type": "http",
+      "documentation": "",
+      "method": "post",
+      "endpoint": "reserva-ativo",
+      "responses": [
+        {
+          "uuid": "5071586b-4f39-406d-a666-12fb0a2ce8c1",
+          "body": "{\n  \"status\": \"RESERVADO\"\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "",
+          "headers": [],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
+    },
+    {
+      "uuid": "7128e3ce-9efa-4051-842d-3bd3e11d5df9",
+      "type": "http",
+      "documentation": "",
+      "method": "post",
+      "endpoint": "notify",
+      "responses": [
+        {
+          "uuid": "5063b19d-a402-4bf6-8d34-1fc52e6f6693",
+          "body": "{}",
+          "latency": 0,
+          "statusCode": 201,
+          "label": "",
+          "headers": [],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
+    }
+  ],
+  "rootChildren": [
+    {
+      "type": "route",
+      "uuid": "70bb77c1-1bff-4b2e-84d0-a82f543f170c"
+    },
+    {
+      "type": "route",
+      "uuid": "7128e3ce-9efa-4051-842d-3bd3e11d5df9"
+    }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "certPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [
+    {
+      "key": "Content-Type",
+      "value": "application/json"
+    }
+  ],
+  "proxyReqHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "proxyResHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "data": [],
+  "callbacks": []
+}

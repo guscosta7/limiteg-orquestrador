@@ -1,0 +1,60 @@
+{
+  "mappings": [
+    {
+      "name": "POST /reserva-ativo - sucesso",
+      "request": {
+        "method": "POST",
+        "url": "/reserva-ativo"
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "RESERVADO" }
+      }
+    },
+    {
+      "name": "GET /ativos/elegiveis - sucesso",
+      "request": {
+        "method": "GET",
+        "url": "/ativos/elegiveis"
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "ativos": [
+            { "id": "ativo-001", "valor": 4191.76, "rendimento": 100.0 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "PUT /limite-cartao - sucesso",
+      "request": {
+        "method": "PUT",
+        "url": "/limite-cartao"
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "status": "PROVISIONADO" }
+      }
+    },
+    {
+      "name": "GET /cartoes/elegiveis - sucesso",
+      "request": {
+        "method": "GET",
+        "url": "/cartoes/elegiveis"
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "cartoes": [
+            { "id": "cartao-001", "limiteAtual": 8000.00 }
+          ]
+        }
+      }
+    }
+  ]
+}
