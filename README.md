@@ -26,7 +26,7 @@ POST /contratacao   →   POST /reserva-ativo   →   PUT /limite-cartao
 | Limite não atualizado após contratação | Máquina de estados com retry por passo |
 | Duplicatas por retry indevido | `idempotency_id` como chave única no DynamoDB |
 | Falha silenciosa nas integrações | Circuit breaker + backoff exponencial |
-| Falta de visibilidade operacional | Traces com `correlation_id` + métricas no Datadog |
+| Falta de visibilidade operacional | Logs com `correlation_id` + métricas via Micrometer |
 
 ---
 
@@ -55,7 +55,9 @@ o retry retoma **do passo que parou**, sem reprocessar o que já foi feito.
 
 ### Idempotência
 
-O `idempotency_id` é composto por `client_id + cartao_id + ativo_id`.
+O `idempotency_id` é montado internamente pelo serviço a partir de
+`clienteId + cartaoId + ativoId` enviados no corpo da requisição — não é
+recebido como header.
 
 - Um ativo só pode garantir uma contratação — regra de negócio
 - Qualquer retry com o mesmo `idempotency_id` retoma o estado existente
@@ -71,9 +73,8 @@ O `idempotency_id` é composto por `client_id + cartao_id + ativo_id`.
 | Spring Boot 3.2 | Framework |
 | Spring Cloud OpenFeign | Clientes HTTP |
 | Resilience4j | Circuit breaker · retry · timeout |
-| Micrometer + Datadog | Métricas e traces |
-| AWS DynamoDB | Estado da contratação |
-| AWS SQS | Fila de reconciliação e DLQ |
+| Micrometer | Métricas (exportador configurável por ambiente) |
+| AWS DynamoDB | Estado da execução |
 
 ---
 
@@ -82,20 +83,34 @@ O `idempotency_id` é composto por `client_id + cartao_id + ativo_id`.
 ```
 src/main/java/br/com/itau/limiteg/orquestrador/
 ├── config/
-│   └── DynamoDbConfig.java          — client AWS DynamoDB
+│   ├── DynamoDbConfig.java              — client AWS DynamoDB
+│   ├── FeignConfig.java                 — configuração dos clientes HTTP
+│   ├── CircuitBreakerEventListener.java — logging de transições do circuit breaker
+│   └── RetryEventListener.java          — logging de tentativas de retry
 ├── domain/
-│   ├── StatusContratacao.java        — enum da máquina de estados
-│   └── ContratacaoOrquestrador.java  — entidade DynamoDB
+│   ├── StatusExecucao.java              — enum da máquina de estados
+│   ├── StatusExecucaoConverter.java     — converter DynamoDB para o enum
+│   ├── InstantAsStringConverter.java    — converter DynamoDB para timestamps
+│   └── ExecucaoOrquestrador.java        — entidade DynamoDB (estado + parâmetros de execução)
 ├── repository/
-│   └── ContratacaoOrquestradorRepository.java
+│   └── OrquestradorRepository.java      — acesso à tabela DynamoDB
 ├── service/
-│   └── ContratacaoOrquestradorService.java  — orquestração principal
+│   ├── OrquestradorService.java         — orquestração principal e máquina de estados
+│   ├── OrquestradorRequest.java         — record de entrada do service
+│   └── ReconciliacaoWorker.java         — @Scheduled, safety net para execuções presas
 ├── client/
-│   └── Clients.java                  — Feign clients com circuit breaker
+│   ├── ContratoClient.java, AtivoClient.java, CartaoClient.java — Feign clients
+│   ├── ClientFallback.java              — fallback comum dos 3 clients
+│   └── *Request.java / *Response.java / *DTO.java — records de payload, um por arquivo
+├── controller/
+│   ├── OrquestradorController.java      — endpoints HTTP
+│   ├── OrquestradorHttpRequest.java     — record de entrada do controller
+│   ├── OrquestradorResponse.java        — record de saída
+│   └── GlobalExceptionHandler.java      — tratamento centralizado de exceções
 ├── metrics/
-│   └── ContratacaoMetrics.java       — MeterRegistry por passo/status/latência
+│   └── OrquestradorMetrics.java         — MeterRegistry por passo/status/latência
 └── exception/
-    └── ContratacaoDuplicadaException.java
+    └── ExecucaoDuplicadaException.java
 ```
 
 ---
@@ -109,8 +124,6 @@ src/main/java/br/com/itau/limiteg/orquestrador/
 | `API_CONTRATACAO_URL` | URL da API de Contratação | Sim |
 | `API_ATIVOS_URL` | URL da API de Ativos | Sim |
 | `API_CARTOES_URL` | URL da API de Cartões | Sim |
-| `DATADOG_API_KEY` | Chave da API do Datadog | Sim (prod) |
-| `DATADOG_APP_KEY` | Application key do Datadog | Sim (prod) |
 | `AWS_REGION` | Região AWS | Sim |
 | `ENV` | Ambiente (local/dev/prod) | Não (default: local) |
 
@@ -126,10 +139,12 @@ resilience4j:
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         ignore-exceptions:
-          - ContratacaoDuplicadaException   # não faz retry em duplicata
+          - br.com.itau.limiteg.orquestrador.exception.ExecucaoDuplicadaException
 ```
 
 Tentativas: `1s → 2s → 4s` antes de marcar como `FALHA`.
+`ExecucaoDuplicadaException` é ignorada no retry — duplicata é decisão de
+negócio, não falha de infraestrutura, então não faz sentido tentar de novo.
 
 ---
 
@@ -147,12 +162,13 @@ Tentativas: `1s → 2s → 4s` antes de marcar como `FALHA`.
 docker-compose up -d
 ```
 
-Isso sobe DynamoDB Local, LocalStack (SQS), WireMock e Datadog Agent.
-O container `setup` cria a tabela e as filas automaticamente.
+Isso sobe DynamoDB Local e WireMock. O container `dynamodb-init` cria a
+tabela `limiteg-orquestrador-execucoes` automaticamente após o DynamoDB
+Local ficar saudável.
 
-Acompanhe o setup:
+Acompanhe a criação da tabela:
 ```bash
-docker-compose logs -f setup
+docker-compose logs -f dynamodb-init
 ```
 
 ### 2. Rodar a aplicação
@@ -166,10 +182,9 @@ A aplicação aponta para o WireMock (porta 9090) e DynamoDB Local (porta 8000).
 ### 3. Testar o fluxo completo
 
 ```bash
-curl -X POST http://localhost:8080/contratacao \
+curl -X POST http://localhost:8080/orquestrador/contratar \
   -H "Content-Type: application/json" \
   -H "Correlation-Id: corr-teste-001" \
-  -H "Idempotency-Key: cliente-001+cartao-001+ativo-001" \
   -d '{
     "clienteId": "cliente-001",
     "cartaoId": "cartao-001",
@@ -180,46 +195,50 @@ curl -X POST http://localhost:8080/contratacao \
 ```
 
 **Testando idempotência** — envie a mesma requisição duas vezes.
-A segunda deve retornar o estado existente sem criar nova contratação.
+A segunda deve retornar `409 Conflict` sem criar nova execução.
 
 **Testando retry** — no WireMock Admin (http://localhost:9090/__admin),
 configure a API de Cartões para retornar 500 e observe o circuit breaker abrir.
 
+**Consultando uma execução** — `GET /orquestrador/{contratacaoId}` usando o
+`contratacaoId` retornado na resposta do passo anterior.
+
 ### 4. Visualizar registros no DynamoDB
 
-Acesse http://localhost:8001 para ver a tabela `contratacoes-orquestrador`.
+Acesse http://localhost:8001 para ver a tabela `limiteg-orquestrador-execucoes`.
 
 ---
 
 ## Métricas
 
-As métricas são exportadas via Micrometer para o Datadog com as tags:
-`servico`, `ambiente`, `correlation_id`.
+As métricas são exportadas via Micrometer com as tags: `servico`, `ambiente`, `correlation_id`.
+O `MeterRegistry` é fornecido pelo Spring Boot Actuator; o exportador (Datadog,
+Prometheus, etc.) é configuração de ambiente, não está fixado no código.
 
 | Métrica | Descrição |
 |---|---|
-| `limiteg.contratacao.passo` | Contagem de sucesso/falha por passo |
-| `limiteg.contratacao.status` | Transições de estado |
-| `limiteg.contratacao.latencia` | Latência por passo |
-| `limiteg.contratacao.duplicata` | Tentativas de duplicata bloqueadas |
-| `limiteg.contratacao.retry` | Retries por tentativa |
+| `limiteg.orquestrador.passo` | Contagem de sucesso/falha por passo |
+| `limiteg.orquestrador.status` | Transições de estado |
+| `limiteg.orquestrador.latencia` | Latência por passo |
+| `limiteg.orquestrador.duplicata` | Tentativas de duplicata bloqueadas |
+| `limiteg.orquestrador.retry` | Retries por tentativa |
 | `resilience4j.circuitbreaker.*` | Estado do circuit breaker por cliente |
 
 ---
 
 ## Tabela DynamoDB
 
-**Nome:** `contratacoes-orquestrador`
+**Nome:** `limiteg-orquestrador-execucoes`
 
-**Chave primária:** `idempotency_id` (String) — composta por `client_id-cartao_id-ativo_id`
+**Chave primária:** `idempotency_id` (String) — composta por `clienteId-cartaoId-ativoId`
 
-**GSI:** `contratacao_id-index` — para busca pelo ID de negócio
+**GSI:** `contratacao_id-index` — para busca pelo ID de negócio (usado pela tela de recibo)
 
 **Estrutura do item:**
 
 ```json
 {
-  "idempotency_id":  "cliente-001+cartao-001+ativo-001",
+  "idempotency_id":  "cliente-001-cartao-001-ativo-001",
   "contratacao_id":  "uuid-gerado",
   "status":          "ATIVO_RESERVADO",
   "cliente_id":      "cliente-001",
@@ -235,6 +254,32 @@ As métricas são exportadas via Micrometer para o Datadog com as tags:
 }
 ```
 
+> **Nota de design:** esta tabela guarda tanto o estado de execução
+> (`status`, `tentativas`, `ultimo_erro`) quanto os parâmetros de negócio
+> (`cliente_id`, `cartao_id`, `ativo_id`, `valor_reservado`, `novo_limite`)
+> necessários para o `ReconciliacaoWorker` reprocessar uma execução presa
+> sem depender de outro sistema estar disponível. Uma evolução natural
+> seria separar isso em duas tabelas — uma para estado, outra para os
+> parâmetros — já que mudam por razões diferentes (Single Responsibility).
+> Optamos por manter em uma tabela só nesta versão para reduzir a
+> superfície de mudança e manter o escopo dentro do tempo do case.
+
 ---
 
+## Worker de Reconciliação
 
+`ReconciliacaoWorker` roda via `@Scheduled` e busca execuções com status
+pendente (não `CONCLUIDA` nem `FALHA`) sem atualização há mais de N minutos.
+Para cada uma, chama `OrquestradorService.retomarExecucao`, que consulta o
+DynamoDB e continua exatamente do passo que parou.
+
+Após esgotar o número máximo de tentativas, a execução é marcada como
+`FALHA` definitiva.
+
+**Por que `@Scheduled` e não uma fila (SQS)?** O fluxo principal da tela 6
+precisa ser síncrono — o cliente espera a confirmação na hora. Para a
+reconciliação, que é assíncrona por natureza, `@Scheduled` é suficiente
+para o volume atual e evita infraestrutura adicional. Em escala maior, o
+`scan()` da tabela não performa bem e múltiplas instâncias do worker podem
+disputar a mesma execução — uma fila com um consumer por mensagem resolveria
+os dois problemas como evolução futura.
